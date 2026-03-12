@@ -125,8 +125,8 @@ footer b{color:#fff;}
   <div class="card">
     <div class="ch"><span class="ico">🔍</span><div><h2>استعلام سريع / Quick Search</h2></div></div>
     <div class="g2">
-      <div class="fg"><label>💊 اختر الدواء / Select Drug</label><select id="view_drug" onchange="showDrugInfo()"><option value="">— اختر —</option></select></div>
-      <div class="sb"><div class="sl">المخزون المتاح / Available Stock</div><div class="sv" id="sb_val">—</div><div style="font-size:.8rem;opacity:.6;">وحدة / units</div><div class="sa ok" id="sb_alert" style="display:none"></div></div>
+      <div class="fg"><label>💊 اختر الدواء</label><select id="view_drug" onchange="showDrugInfo()"><option value="">— اختر —</option></select></div>
+      <div class="sb"><div class="sl">المخزون المتاح</div><div class="sv" id="sb_val">—</div><div class="sa ok" id="sb_alert" style="display:none"></div></div>
     </div>
     <div id="drug_details" style="display:none;margin-top:1rem;">
       <div class="g3">
@@ -139,8 +139,8 @@ footer b{color:#fff;}
   <div class="card">
     <div class="ch"><span class="ico">➕</span><div><h2>إضافة دواء جديد / Add New Drug</h2></div></div>
     <div class="g2">
-      <div class="fg"><label>💊 اسم الدواء / Name</label><input type="text" id="new_name" placeholder="اسم الدواء"/></div>
-      <div class="fg"><label>🏷️ الفئة / Category</label><select id="new_cat"><option>IV Meds</option><option>ABX</option><option>IV Fluid</option><option>Inhaler</option><option>Tabs</option><option>Suppo</option><option>Cream</option><option>REF</option><option>Crash Card</option><option>Other</option></select></div>
+      <div class="fg"><label>💊 اسم الدواء</label><input type="text" id="new_name" placeholder="اسم الدواء"/></div>
+      <div class="fg"><label>🏷️ الفئة</label><select id="new_cat"><option>IV Meds</option><option>ABX</option><option>IV Fluid</option><option>Inhaler</option><option>Tabs</option><option>Suppo</option><option>Cream</option><option>REF</option><option>Crash Card</option><option>Other</option></select></div>
       <div class="fg"><label>📦 الكمية الأولية</label><input type="number" id="new_qty" placeholder="0" min="0"/></div>
       <div class="fg"><label>📦 الحد الأدنى</label><input type="number" id="new_min" placeholder="0" min="0"/></div>
       <div class="fg"><label>📆 تاريخ الانتهاء</label><input type="date" id="new_exp"/></div>
@@ -190,98 +190,128 @@ footer b{color:#fff;}
     </div>
   </div>
 </div>
-<script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+import { getFirestore, collection, getDocs, doc, updateDoc, addDoc, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAzDkFHWhG60UVsMBhjT5fLDFXYTOnhD8g",
+  authDomain: "tanasuq-er-med.firebaseapp.com",
+  projectId: "tanasuq-er-med",
+  storageBucket: "tanasuq-er-med.firebasestorage.app",
+  messagingSenderId: "68658394348",
+  appId: "1:68658394348:web:c3cf07c56e5dd2d8ec21c9",
+  measurementId: "G-SZTEB9M2C6"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 var DB=[], HISTORY=[], currentOp='add', _mcb=null;
-var SURL='https://hyizijjbyyljiigjgxuk.supabase.co';
-var SKEY='sb_publishable_OK269LER63moJjBCpS-m0A_GPhDcwYY';
 
-function sbFetch(path, method, body) {
-  var opts = {
-    method: method || 'GET',
-    headers: {
-      'apikey': SKEY,
-      'Authorization': 'Bearer ' + SKEY,
-      'Content-Type': 'application/json',
-      'Prefer': method === 'POST' ? 'return=minimal' : ''
-    }
-  };
-  if (body) opts.body = JSON.stringify(body);
-  return fetch(SURL + '/rest/v1/' + path, opts).then(function(r) {
-    if (r.status === 204 || r.status === 201) return {};
-    return r.json();
-  });
-}
-
-window.onload = function() {
-  document.getElementById('inp_date').value = today();
-  startClock();
-  refreshAll();
+window.showPage = function(name) {
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav button').forEach(function(t){t.classList.remove('active');});
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelector('[data-tab="'+name+'"]').classList.add('active');
+  if(name==='database'||name==='history') refreshAll();
 };
 
-function today() { return new Date().toISOString().slice(0,10); }
-function nowTime() { return new Date().toTimeString().slice(0,5); }
-
-function startClock() {
-  document.getElementById('clockEl').textContent = new Date().toTimeString().slice(0,8);
-  setInterval(function() {
-    document.getElementById('clockEl').textContent = new Date().toTimeString().slice(0,8);
-  }, 1000);
-}
-
-function refreshAll() {
-  sbFetch('medications?select=*&order=code').then(function(meds) {
-    DB = (meds||[]).map(function(m) {
-      return {code:m.code, name:m.name, cat:m.category, min:m.min_qty, qty:m.current_qty, exp:m.expiry_date, updated:m.last_updated};
-    });
-    buildCodeList(); buildDrugDropdown(); renderDB(); renderStats();
-  }).catch(function(e) { console.error('meds error:', e); });
-
-  sbFetch('history_log?select=*&order=id.desc&limit=300').then(function(hist) {
-    HISTORY = (hist||[]).map(function(h) {
-      return {date:h.date, time:h.time, name:h.drug_name, code:h.drug_code, op:h.operation, cost:h.cost_type, qty:h.quantity, user:h.user_name};
-    });
-    renderHistory();
-  }).catch(function(e) { console.error('hist error:', e); });
-}
-
-function buildCodeList() {
-  document.getElementById('code-list').innerHTML = DB.map(function(m) {
-    return '<option value="'+m.code+'" label="'+m.name+'">';
-  }).join('');
-}
-
-function buildDrugDropdown() {
-  document.getElementById('view_drug').innerHTML = '<option value="">— اختر —</option>' + DB.map(function(m) {
-    return '<option value="'+m.code+'">'+m.name+'</option>';
-  }).join('');
-}
-
-function lookupDrug() {
-  var code = document.getElementById('inp_code').value.trim().toUpperCase();
-  var drug = DB.find(function(m) { return m.code===code; });
-  var box = document.getElementById('drugConfirm');
-  var al = document.getElementById('inp_alert');
-  if (drug) {
-    box.innerHTML = '<div><div class="dn">✅ '+drug.name+'</div><div class="ds">'+drug.cat+' | '+drug.code+'</div></div>';
-    box.style.background = 'linear-gradient(135deg,#148F77,#27AE60)';
-    document.getElementById('inp_stock').value = drug.qty + ' وحدة';
-    if (drug.qty < drug.min) {
-      al.className='al al-w'; al.innerHTML='⚠️ تحذير: المخزون ('+drug.qty+') أقل من الحد الأدنى ('+drug.min+')'; al.style.display='flex';
-    } else { al.style.display='none'; }
-  } else {
-    box.innerHTML='<div><div class="dn">⚠️ كود غير موجود</div><div class="ds">Code not found</div></div>';
-    box.style.background='linear-gradient(135deg,#922b21,#c0392b)';
-    document.getElementById('inp_stock').value=''; al.style.display='none';
-  }
-}
-
-function setOp(op) {
+window.setOp = function(op) {
   currentOp=op;
   document.getElementById('btn_add').classList.toggle('active',op==='add');
   document.getElementById('btn_del').classList.toggle('active',op==='del');
+};
+
+window.lookupDrug = function() {
+  var code=document.getElementById('inp_code').value.trim().toUpperCase();
+  var drug=DB.find(function(m){return m.code===code;});
+  var box=document.getElementById('drugConfirm');
+  var al=document.getElementById('inp_alert');
+  if(drug){
+    box.innerHTML='<div><div class="dn">✅ '+drug.name+'</div><div class="ds">'+drug.cat+' | '+drug.code+'</div></div>';
+    box.style.background='linear-gradient(135deg,#148F77,#27AE60)';
+    document.getElementById('inp_stock').value=drug.qty+' وحدة';
+    if(drug.qty<drug.min){al.className='al al-w';al.innerHTML='⚠️ تحذير: المخزون ('+drug.qty+') أقل من الحد الأدنى ('+drug.min+')';al.style.display='flex';}
+    else{al.style.display='none';}
+  } else {
+    box.innerHTML='<div><div class="dn">⚠️ كود غير موجود</div><div class="ds">Code not found</div></div>';
+    box.style.background='linear-gradient(135deg,#922b21,#c0392b)';
+    document.getElementById('inp_stock').value='';al.style.display='none';
+  }
+};
+
+window.showStatus = function(id,type,msg) {
+  var el=document.getElementById(id);
+  el.className='al '+(type==='s'?'al-s':type==='e'?'al-e':'al-w');
+  el.innerHTML=msg;el.style.display='flex';
+  if(type==='s') setTimeout(function(){el.style.display='none';},5000);
+};
+
+window.openModal = function(title,body,cb) {
+  document.getElementById('modal_title').textContent=title;
+  document.getElementById('modal_body').textContent=body;
+  _mcb=cb;document.getElementById('modal').classList.add('open');
+  document.getElementById('modal_confirm').onclick=function(){closeModal();if(_mcb)_mcb();};
+};
+
+window.closeModal = function(){document.getElementById('modal').classList.remove('open');};
+
+window.clearInput = function() {
+  ['inp_code','inp_qty','inp_user'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('inp_date').value=today();
+  document.getElementById('inp_stock').value='';
+  document.getElementById('inp_alert').style.display='none';
+  document.getElementById('drugConfirm').innerHTML='<div><div class="dn">أدخل الكود للتأكيد</div><div class="ds">Enter code to confirm</div></div>';
+  document.getElementById('drugConfirm').style.background='linear-gradient(135deg,var(--teal),var(--cyan))';
+};
+
+function today(){return new Date().toISOString().slice(0,10);}
+function nowTime(){return new Date().toTimeString().slice(0,5);}
+
+function startClock(){
+  document.getElementById('clockEl').textContent=new Date().toTimeString().slice(0,8);
+  setInterval(function(){document.getElementById('clockEl').textContent=new Date().toTimeString().slice(0,8);},1000);
 }
 
-function submitTransaction() {
+async function refreshAll(){
+  try {
+    var snap = await getDocs(query(collection(db,'medications'),orderBy('code')));
+    DB = snap.docs.map(function(d){var x=d.data();return {id:d.id,code:x.code,name:x.name,cat:x.category,min:x.min_qty,qty:x.current_qty,exp:x.expiry_date,updated:x.last_updated};});
+    var snap2 = await getDocs(query(collection(db,'history_log'),orderBy('created_at','desc'),limit(300)));
+    HISTORY = snap2.docs.map(function(d){var x=d.data();return {date:x.date,time:x.time,name:x.drug_name,code:x.drug_code,op:x.operation,cost:x.cost_type,qty:x.quantity,user:x.user_name};});
+    buildCodeList();buildDrugDropdown();renderDB();renderHistory();renderStats();
+  } catch(e){console.error('Firebase error:',e);}
+}
+
+function buildCodeList(){
+  document.getElementById('code-list').innerHTML=DB.map(function(m){return '<option value="'+m.code+'" label="'+m.name+'">';}).join('');
+}
+
+function buildDrugDropdown(){
+  document.getElementById('view_drug').innerHTML='<option value="">— اختر —</option>'+DB.map(function(m){return '<option value="'+m.code+'">'+m.name+'</option>';}).join('');
+}
+
+window.showDrugInfo = function(){
+  var code=document.getElementById('view_drug').value;
+  var d=DB.find(function(m){return m.code===code;});
+  if(d){
+    document.getElementById('sb_val').textContent=d.qty;
+    var al=document.getElementById('sb_alert');al.style.display='inline-block';
+    if(d.qty<d.min){al.className='sa low';al.textContent='⚠️ LOW STOCK';}
+    else{al.className='sa ok';al.textContent='✅ Stock OK';}
+    document.getElementById('det_cat').value=d.cat;
+    document.getElementById('det_min').value=d.min;
+    document.getElementById('det_exp').value=d.exp||'—';
+    document.getElementById('drug_details').style.display='block';
+  } else {
+    document.getElementById('sb_val').textContent='—';
+    document.getElementById('sb_alert').style.display='none';
+    document.getElementById('drug_details').style.display='none';
+  }
+};
+
+window.submitTransaction = async function(){
   var code=document.getElementById('inp_code').value.trim().toUpperCase();
   var qty=parseInt(document.getElementById('inp_qty').value);
   var cost=document.getElementById('inp_cost').value;
@@ -295,48 +325,18 @@ function submitTransaction() {
   var opLabel=currentOp==='add'?'إضافة':'صرف';
   openModal('تأكيد العملية','💊 '+drug.name+'
 العملية: '+opLabel+' | الكمية: '+qty+'
-التكلفة: '+cost+' | المستخدم: '+user, function() {
-    if(currentOp==='del'&&drug.qty<qty){showStatus('inp_status','e','❌ الكمية المطلوبة ('+qty+') أكبر من المتاح ('+drug.qty+')');return;}
+التكلفة: '+cost+' | المستخدم: '+user, async function(){
+    if(currentOp==='del'&&drug.qty<qty){showStatus('inp_status','e','❌ الكمية ('+qty+') أكبر من المتاح ('+drug.qty+')');return;}
     var newQty=currentOp==='add'?drug.qty+qty:drug.qty-qty;
-    sbFetch('medications?code=eq.'+code, 'PATCH', {current_qty:newQty, last_updated:date}).then(function() {
-      return sbFetch('history_log', 'POST', {date:date,time:nowTime(),source:'Input',drug_name:drug.name,drug_code:code,operation:opLabel,cost_type:cost,quantity:qty,user_name:user});
-    }).then(function() {
-      refreshAll();
-      showStatus('inp_status','s','✅ تمت العملية! '+opLabel+' '+qty+' وحدة من '+drug.name);
-      clearInput();
-    }).catch(function(e){showStatus('inp_status','e','❌ خطأ: '+e.message);});
+    await updateDoc(doc(db,'medications',drug.id),{current_qty:newQty,last_updated:date});
+    await addDoc(collection(db,'history_log'),{date:date,time:nowTime(),source:'Input',drug_name:drug.name,drug_code:code,operation:opLabel,cost_type:cost,quantity:qty,user_name:user,created_at:new Date().toISOString()});
+    await refreshAll();
+    showStatus('inp_status','s','✅ تمت العملية! '+opLabel+' '+qty+' وحدة من '+drug.name);
+    clearInput();
   });
-}
+};
 
-function clearInput() {
-  ['inp_code','inp_qty','inp_user'].forEach(function(id){document.getElementById(id).value='';});
-  document.getElementById('inp_date').value=today();
-  document.getElementById('inp_stock').value='';
-  document.getElementById('inp_alert').style.display='none';
-  document.getElementById('drugConfirm').innerHTML='<div><div class="dn">أدخل الكود للتأكيد</div><div class="ds">Enter code to confirm</div></div>';
-  document.getElementById('drugConfirm').style.background='linear-gradient(135deg,var(--teal),var(--cyan))';
-}
-
-function showDrugInfo() {
-  var code=document.getElementById('view_drug').value;
-  var d=DB.find(function(m){return m.code===code;});
-  if(d){
-    document.getElementById('sb_val').textContent=d.qty;
-    var al=document.getElementById('sb_alert'); al.style.display='inline-block';
-    if(d.qty<d.min){al.className='sa low';al.textContent='⚠️ LOW STOCK';}
-    else{al.className='sa ok';al.textContent='✅ Stock OK';}
-    document.getElementById('det_cat').value=d.cat;
-    document.getElementById('det_min').value=d.min;
-    document.getElementById('det_exp').value=d.exp||'—';
-    document.getElementById('drug_details').style.display='block';
-  } else {
-    document.getElementById('sb_val').textContent='—';
-    document.getElementById('sb_alert').style.display='none';
-    document.getElementById('drug_details').style.display='none';
-  }
-}
-
-function addNewDrug() {
+window.addNewDrug = async function(){
   var name=document.getElementById('new_name').value.trim();
   var cat=document.getElementById('new_cat').value;
   var qty=parseInt(document.getElementById('new_qty').value)||0;
@@ -347,71 +347,40 @@ function addNewDrug() {
   if(!user){showStatus('new_status','e','أدخل اسم المستخدم');return;}
   var maxNum=DB.reduce(function(mx,m){return Math.max(mx,parseInt(m.code.replace('MED-',''))||0);},0);
   var newCode='MED-'+String(maxNum+1).padStart(3,'0');
-  sbFetch('medications','POST',{code:newCode,name:name,category:cat,min_qty:min,current_qty:qty,expiry_date:exp,last_updated:today()}).then(function(){
-    return sbFetch('history_log','POST',{date:today(),time:nowTime(),source:'View & Add',drug_name:name,drug_code:newCode,operation:'NEW DRUG',cost_type:'—',quantity:qty,user_name:user});
-  }).then(function(){
-    refreshAll();
-    showStatus('new_status','s','✅ تمت الإضافة! "'+name+'" — الكود: '+newCode);
-    ['new_name','new_qty','new_min','new_exp','new_user'].forEach(function(id){document.getElementById(id).value='';});
-  }).catch(function(e){showStatus('new_status','e','❌ خطأ: '+e.message);});
-}
+  await addDoc(collection(db,'medications'),{code:newCode,name:name,category:cat,min_qty:min,current_qty:qty,expiry_date:exp,last_updated:today()});
+  await addDoc(collection(db,'history_log'),{date:today(),time:nowTime(),source:'View & Add',drug_name:name,drug_code:newCode,operation:'NEW DRUG',cost_type:'—',quantity:qty,user_name:user,created_at:new Date().toISOString()});
+  await refreshAll();
+  showStatus('new_status','s','✅ تمت الإضافة! "'+name+'" — الكود: '+newCode);
+  ['new_name','new_qty','new_min','new_exp','new_user'].forEach(function(id){document.getElementById(id).value='';});
+};
 
-function renderDB() {
+window.renderDB = function(){
   var q=document.getElementById('db_search').value.toLowerCase();
   var cat=document.getElementById('db_filter').value;
   var stk=document.getElementById('db_stock_filter').value;
-  var rows=DB.filter(function(m){
-    return(!q||m.name.toLowerCase().includes(q)||m.code.toLowerCase().includes(q))&&(!cat||m.cat===cat)&&(!stk||(stk==='ok'?m.qty>=m.min:m.qty<m.min));
-  });
-  document.getElementById('db_body').innerHTML=rows.length?rows.map(function(m){
-    return '<tr><td class="tdc">'+m.code+'</td><td class="tdn">'+m.name+'</td><td><span class="cb">'+m.cat+'</span></td><td>'+m.min+'</td><td><span class="qb '+(m.qty>=m.min?'qok':'qlo')+'">'+m.qty+'</span></td><td>'+(m.exp||'—')+'</td><td style="color:var(--mid);font-size:.75rem;">'+(m.updated||'—')+'</td></tr>';
-  }).join(''):'<tr><td colspan="7" style="color:var(--mid);padding:2rem;">لا توجد نتائج</td></tr>';
-}
+  var rows=DB.filter(function(m){return(!q||m.name.toLowerCase().includes(q)||m.code.toLowerCase().includes(q))&&(!cat||m.cat===cat)&&(!stk||(stk==='ok'?m.qty>=m.min:m.qty<m.min));});
+  document.getElementById('db_body').innerHTML=rows.length?rows.map(function(m){return '<tr><td class="tdc">'+m.code+'</td><td class="tdn">'+m.name+'</td><td><span class="cb">'+m.cat+'</span></td><td>'+m.min+'</td><td><span class="qb '+(m.qty>=m.min?'qok':'qlo')+'">'+m.qty+'</span></td><td>'+(m.exp||'—')+'</td><td style="color:var(--mid);font-size:.75rem;">'+(m.updated||'—')+'</td></tr>';}).join(''):'<tr><td colspan="7" style="color:var(--mid);padding:2rem;">لا توجد نتائج</td></tr>';
+};
 
-function renderHistory() {
+window.renderHistory = function(){
   var q=document.getElementById('hist_search').value.toLowerCase();
   var op=document.getElementById('hist_op_filter').value;
-  var rows=HISTORY.filter(function(h){
-    return(!q||h.name.toLowerCase().includes(q)||h.user.toLowerCase().includes(q))&&(!op||h.op.includes(op));
-  });
-  document.getElementById('hist_body').innerHTML=rows.length?rows.map(function(h,i){
-    var cls=h.op.includes('إضافة')?'oa':(h.op==='NEW DRUG'?'on':'od');
-    return '<tr><td style="color:var(--mid);font-size:.75rem;">'+(i+1)+'</td><td>'+h.date+'</td><td>'+h.time+'</td><td class="tdn">'+h.name+'</td><td class="tdc">'+h.code+'</td><td class="'+cls+'">'+h.op+'</td><td>'+h.cost+'</td><td><b>'+h.qty+'</b></td><td>'+h.user+'</td></tr>';
-  }).join(''):'<tr><td colspan="9" style="color:var(--mid);padding:2rem;">لا توجد سجلات</td></tr>';
-}
+  var rows=HISTORY.filter(function(h){return(!q||h.name.toLowerCase().includes(q)||h.user.toLowerCase().includes(q))&&(!op||h.op.includes(op));});
+  document.getElementById('hist_body').innerHTML=rows.length?rows.map(function(h,i){var cls=h.op.includes('إضافة')?'oa':(h.op==='NEW DRUG'?'on':'od');return '<tr><td style="color:var(--mid);font-size:.75rem;">'+(i+1)+'</td><td>'+h.date+'</td><td>'+h.time+'</td><td class="tdn">'+h.name+'</td><td class="tdc">'+h.code+'</td><td class="'+cls+'">'+h.op+'</td><td>'+h.cost+'</td><td><b>'+h.qty+'</b></td><td>'+h.user+'</td></tr>';}).join(''):'<tr><td colspan="9" style="color:var(--mid);padding:2rem;">لا توجد سجلات</td></tr>';
+};
 
-function renderStats() {
-  var total=DB.length, low=DB.filter(function(m){return m.qty<m.min;}).length;
-  var ops=HISTORY.filter(function(h){return h.op!=='INIT';}).length;
-  var cats=new Set(DB.map(function(m){return m.cat;})).size;
+function renderStats(){
+  var total=DB.length,low=DB.filter(function(m){return m.qty<m.min;}).length;
+  var ops=HISTORY.length,cats=new Set(DB.map(function(m){return m.cat;})).size;
   document.getElementById('statsGrid').innerHTML=[
     {icon:'💊',val:total,lbl:'إجمالي الأدوية'},{icon:'🔴',val:low,lbl:'مخزون منخفض'},
     {icon:'📋',val:ops,lbl:'إجمالي العمليات'},{icon:'🏷️',val:cats,lbl:'عدد الفئات'}
   ].map(function(s){return '<div class="sc"><span class="si">'+s.icon+'</span><div><div class="sv2">'+s.val+'</div><div class="sl2">'+s.lbl+'</div></div></div>';}).join('');
 }
 
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
-  document.querySelectorAll('.nav button').forEach(function(t){t.classList.remove('active');});
-  document.getElementById('page-'+name).classList.add('active');
-  document.querySelector('[data-tab="'+name+'"]').classList.add('active');
-  if(name==='database'||name==='history') refreshAll();
-}
-
-function showStatus(id,type,msg) {
-  var el=document.getElementById(id);
-  el.className='al '+(type==='s'?'al-s':type==='e'?'al-e':'al-w');
-  el.innerHTML=msg; el.style.display='flex';
-  if(type==='s') setTimeout(function(){el.style.display='none';},5000);
-}
-
-function openModal(title,body,cb) {
-  document.getElementById('modal_title').textContent=title;
-  document.getElementById('modal_body').textContent=body;
-  _mcb=cb; document.getElementById('modal').classList.add('open');
-  document.getElementById('modal_confirm').onclick=function(){closeModal();if(_mcb)_mcb();};
-}
-function closeModal(){document.getElementById('modal').classList.remove('open');}
+document.getElementById('inp_date').value=today();
+startClock();
+refreshAll();
 </script>
 </body>
 </html>
